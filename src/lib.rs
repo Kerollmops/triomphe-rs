@@ -11,23 +11,36 @@ enum Insert<K, V> {
     Nothing,
 }
 
+impl<K, V> Insert<K, V> {
+    fn replace(self) -> Option<V> {
+        match self {
+            Insert::Replace(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct PseudoLru<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     map: LinkedHashMap<K, V, S>,
     max_size: usize,
+    target_size: usize,
 }
 
 impl<K: Eq + Hash, V> PseudoLru<K, V> {
     fn new(capacity: usize) -> Self {
+        assert!(capacity > 0, "a capacity of zero is invalid");
+
         PseudoLru {
             map: LinkedHashMap::new(),
             max_size: capacity,
+            target_size: capacity,
         }
     }
 
     fn insert(&mut self, k: K, v: V) -> Insert<K, V> {
-        if let Some(old) = self.map.insert(k, v) {
-            Insert::Replace(old)
+        if let Some(v) = self.map.insert(k, v) {
+            Insert::Replace(v)
         }
         else if self.map.len() > self.max_size {
             let (k, v) = self.map.pop_front().unwrap();
@@ -47,10 +60,9 @@ pub struct Arc<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     ghost_lfu: PseudoLru<K, (), S>,
 }
 
+// FIXME capacity badly set !
 impl<K: Eq + Hash, V> Arc<K, V> {
     pub fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "a capacity of zero is invalid");
-
         Arc {
             ghost_lru: PseudoLru::new(capacity),
             lru: PseudoLru::new(capacity),
@@ -59,22 +71,19 @@ impl<K: Eq + Hash, V> Arc<K, V> {
         }
     }
 
-    pub fn insert(&mut self, k: K, v: V) {
+    pub fn insert(&mut self, k: K, v: V) -> Option<V> {
         if self.lru.map.contains_key(&k) {
-            if let None = self.lfu.map.get_refresh(&k) {
-                if let Insert::Evict(k, _) = self.lfu.insert(k, v) {
-                    self.ghost_lfu.insert(k, ());
-                    // TODO change capacities ???
-                }
-            }
+            self.lfu.insert(k, v).replace()
         }
-        else if let Insert::Evict(k, _) = self.lru.insert(k, v) {
-            self.ghost_lru.insert(k, ());
-            // TODO change capacities ???
+        else if self.lfu.map.contains_key(&k) {
+            self.lfu.insert(k, v).replace()
+        }
+        else {
+            self.lru.insert(k, v).replace()
         }
     }
 
-    pub fn get_mut(&mut self, k: &K) -> Option<V> {
+    pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         unimplemented!()
     }
 }
