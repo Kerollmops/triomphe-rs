@@ -1,6 +1,9 @@
 [package]
 name = "triomphe"
 version = "0.1.0"
+license = "MIT"
+description = "An Adjustable Replacement Cache that holds a limited number of key-value pairs"
 authors = ["Kerollmops <renault.cle@gmail.com>"]
 
 [dependencies]
+linked-hash-map = "0.5"
