@@ -5,16 +5,16 @@ use std::collections::BTreeMap;
 use std::collections::hash_map::RandomState;
 use linked_hash_map::LinkedHashMap;
 
-enum Insert<K, V> {
+enum Insertion<K, V> {
     Replace(V),
     Evict(K, V),
     Nothing,
 }
 
-impl<K, V> Insert<K, V> {
+impl<K, V> Insertion<K, V> {
     fn replace(self) -> Option<V> {
         match self {
-            Insert::Replace(v) => Some(v),
+            Insertion::Replace(v) => Some(v),
             _ => None,
         }
     }
@@ -38,16 +38,16 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
         }
     }
 
-    fn insert(&mut self, k: K, v: V) -> Insert<K, V> {
+    fn insert(&mut self, k: K, v: V) -> Insertion<K, V> {
         if let Some(v) = self.map.insert(k, v) {
-            Insert::Replace(v)
+            Insertion::Replace(v)
         }
         else if self.map.len() > self.max_size {
             let (k, v) = self.map.pop_front().unwrap();
-            Insert::Evict(k, v)
+            Insertion::Evict(k, v)
         }
         else {
-            Insert::Nothing
+            Insertion::Nothing
         }
     }
 }
@@ -78,21 +78,21 @@ impl<K: Eq + Hash, V> Arc<K, V> {
 
         if self.lru.map.contains_key(&k) {
             match self.lfu.insert(k, v) {
-                Insert::Replace(v) => Some(v),
-                Insert::Evict(k, _) => {
+                Insertion::Replace(v) => Some(v),
+                Insertion::Evict(k, _) => {
                     self.ghost_lfu.insert(k, ());
                     None
                 },
-                Insert::Nothing => None,
+                Insertion::Nothing => None,
             }
         } else {
             match self.lru.insert(k, v) {
-                Insert::Replace(v) => Some(v),
-                Insert::Evict(k, _) => {
+                Insertion::Replace(v) => Some(v),
+                Insertion::Evict(k, _) => {
                     self.ghost_lru.insert(k, ());
                     None
                 },
-                Insert::Nothing => None,
+                Insertion::Nothing => None,
             }
         }
     }
