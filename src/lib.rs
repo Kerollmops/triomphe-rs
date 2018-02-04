@@ -72,14 +72,28 @@ impl<K: Eq + Hash, V> Arc<K, V> {
     }
 
     pub fn insert(&mut self, k: K, v: V) -> Option<V> {
+
+        // TODO test if the key is in ghost_lru/lfu
+        //      remove it and update target_sizes
+
         if self.lru.map.contains_key(&k) {
-            self.lfu.insert(k, v).replace()
-        }
-        else if self.lfu.map.contains_key(&k) {
-            self.lfu.insert(k, v).replace()
-        }
-        else {
-            self.lru.insert(k, v).replace()
+            match self.lfu.insert(k, v) {
+                Insert::Replace(v) => Some(v),
+                Insert::Evict(k, _) => {
+                    self.ghost_lfu.insert(k, ());
+                    None
+                },
+                Insert::Nothing => None,
+            }
+        } else {
+            match self.lru.insert(k, v) {
+                Insert::Replace(v) => Some(v),
+                Insert::Evict(k, _) => {
+                    self.ghost_lru.insert(k, ());
+                    None
+                },
+                Insert::Nothing => None,
+            }
         }
     }
 
