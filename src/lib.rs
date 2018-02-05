@@ -28,8 +28,6 @@ struct PseudoLru<K: Eq + Hash, V, S: BuildHasher = RandomState> {
 
 impl<K: Eq + Hash, V> PseudoLru<K, V> {
     fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "a capacity of zero is invalid");
-
         PseudoLru {
             map: LinkedHashMap::new(),
             capacity: capacity,
@@ -50,11 +48,28 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
     }
 
     fn increase_capacity(&mut self) {
-        unimplemented!()
+        self.capacity += 1;
     }
 
     fn decrease_capacity(&mut self) -> Option<(K, V)> {
-        unimplemented!()
+        self.capacity = self.capacity.saturating_sub(1);
+        if self.map.len() > self.capacity {
+            self.map.pop_front()
+        } else {
+            None
+        }
+    }
+}
+
+// TODO remove this, its a little ugly
+fn set_capacity<K, V>(lru: &mut PseudoLru<K, V>, target: usize) -> Option<(K, V)>
+    where K: Eq + Hash
+{
+    if lru.capacity > target {
+        lru.decrease_capacity()
+    } else {
+        lru.increase_capacity();
+        None
     }
 }
 
@@ -64,18 +79,18 @@ pub struct Arc<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     lru: PseudoLru<K, V, S>,        // T1
     lfu: PseudoLru<K, V, S>,        // T2
     ghost_lfu: PseudoLru<K, (), S>, // B2
-    partition: usize,               // repartition of L1 and L2 capacities
+    partition: usize,               // repartition of T1 and T2 capacities
 }
 
-// FIXME capacity badly set !
 impl<K: Eq + Hash, V> Arc<K, V> {
     pub fn new(capacity: usize) -> Self {
+        let capacity = capacity / 2;
         Arc {
             ghost_lru: PseudoLru::new(capacity),
             lru: PseudoLru::new(capacity),
             lfu: PseudoLru::new(capacity),
             ghost_lfu: PseudoLru::new(capacity),
-            partition: capacity / 2,
+            partition: capacity,
         }
     }
 
@@ -86,13 +101,18 @@ impl<K: Eq + Hash, V> Arc<K, V> {
         //      it will be in the lfu anyway
         if self.lru.map.contains_key(&k) {
 
+            let total_capacity = self.lru.capacity + self.lfu.capacity;
+
             if self.ghost_lru.map.remove(&k).is_some() {
                 // increase the LRU (T1) capacity
-                let total = self.lru.capacity + self.lfu.capacity;
-                self.partition = (self.partition + 1).min(total);
+                self.partition = (self.partition + 1).min(total_capacity);
             }
 
-            // self.lfu.set_capacity(xxx) and catch evicted
+            // set the LFU capacity and manage the evicted key
+            let target_capacity = total_capacity - self.partition;
+            if let Some((k, _)) = set_capacity(&mut self.lfu, target_capacity) {
+                self.ghost_lfu.insert(k, ());
+            }
 
             match self.lfu.insert(k, v) {
                 Insert::Replacement(v) => Some(v),
@@ -110,7 +130,10 @@ impl<K: Eq + Hash, V> Arc<K, V> {
                 self.partition.saturating_sub(1);
             }
 
-            // self.lru.set_capacity(xxx) and catch evicted
+            // set the LRU capacity and manage the evicted key
+            if let Some((k, _)) = set_capacity(&mut self.lru, self.partition) {
+                self.ghost_lru.insert(k, ());
+            }
 
             match self.lru.insert(k, v) {
                 Insert::Replacement(v) => Some(v),
