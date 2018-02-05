@@ -5,17 +5,16 @@ use std::collections::BTreeMap;
 use std::collections::hash_map::RandomState;
 use linked_hash_map::LinkedHashMap;
 
-// TODO rename Insert::{ Replacement, Eviction }
-enum Insertion<K, V> {
-    Replace(V),
-    Evict(K, V),
+enum Insert<K, V> {
+    Replacement(V),
+    Eviction(K, V),
     Nothing,
 }
 
-impl<K, V> Insertion<K, V> {
+impl<K, V> Insert<K, V> {
     fn replace(self) -> Option<V> {
         match self {
-            Insertion::Replace(v) => Some(v),
+            Insert::Replacement(v) => Some(v),
             _ => None,
         }
     }
@@ -37,16 +36,16 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
         }
     }
 
-    fn insert(&mut self, k: K, v: V) -> Insertion<K, V> {
+    fn insert(&mut self, k: K, v: V) -> Insert<K, V> {
         if let Some(v) = self.map.insert(k, v) {
-            Insertion::Replace(v)
+            Insert::Replacement(v)
         }
         else if self.map.len() > self.capacity {
             let (k, v) = self.map.pop_front().unwrap();
-            Insertion::Evict(k, v)
+            Insert::Eviction(k, v)
         }
         else {
-            Insertion::Nothing
+            Insert::Nothing
         }
     }
 
@@ -96,12 +95,12 @@ impl<K: Eq + Hash, V> Arc<K, V> {
             // self.lfu.set_capacity(xxx) and catch evicted
 
             match self.lfu.insert(k, v) {
-                Insertion::Replace(v) => Some(v),
-                Insertion::Evict(k, _) => {
+                Insert::Replacement(v) => Some(v),
+                Insert::Eviction(k, _) => {
                     self.ghost_lfu.insert(k, ());
                     None
                 },
-                Insertion::Nothing => None,
+                Insert::Nothing => None,
             }
         }
         else {
@@ -114,12 +113,12 @@ impl<K: Eq + Hash, V> Arc<K, V> {
             // self.lru.set_capacity(xxx) and catch evicted
 
             match self.lru.insert(k, v) {
-                Insertion::Replace(v) => Some(v),
-                Insertion::Evict(k, _) => {
+                Insert::Replacement(v) => Some(v),
+                Insert::Eviction(k, _) => {
                     self.ghost_lru.insert(k, ());
                     None
                 },
-                Insertion::Nothing => None,
+                Insert::Nothing => None,
             }
         }
     }
