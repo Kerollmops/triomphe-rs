@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::collections::hash_map::RandomState;
 use linked_hash_map::LinkedHashMap;
 
+// TODO rename Insert::{ Replacement, Eviction }
 enum Insertion<K, V> {
     Replace(V),
     Evict(K, V),
@@ -23,8 +24,7 @@ impl<K, V> Insertion<K, V> {
 #[derive(Clone)]
 struct PseudoLru<K: Eq + Hash, V, S: BuildHasher = RandomState> {
     map: LinkedHashMap<K, V, S>,
-    max_size: usize,
-    target_size: usize,
+    capacity: usize,
 }
 
 impl<K: Eq + Hash, V> PseudoLru<K, V> {
@@ -33,8 +33,7 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
 
         PseudoLru {
             map: LinkedHashMap::new(),
-            max_size: capacity,
-            target_size: capacity,
+            capacity: capacity,
         }
     }
 
@@ -42,7 +41,7 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
         if let Some(v) = self.map.insert(k, v) {
             Insertion::Replace(v)
         }
-        else if self.map.len() > self.max_size {
+        else if self.map.len() > self.capacity {
             let (k, v) = self.map.pop_front().unwrap();
             Insertion::Evict(k, v)
         }
@@ -50,14 +49,23 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
             Insertion::Nothing
         }
     }
+
+    fn increase_capacity(&mut self) {
+        unimplemented!()
+    }
+
+    fn decrease_capacity(&mut self) -> Option<(K, V)> {
+        unimplemented!()
+    }
 }
 
 #[derive(Clone)]
 pub struct Arc<K: Eq + Hash, V, S: BuildHasher = RandomState> {
-    ghost_lru: PseudoLru<K, (), S>,
-    lru: PseudoLru<K, V, S>,
-    lfu: PseudoLru<K, V, S>,
-    ghost_lfu: PseudoLru<K, (), S>,
+    ghost_lru: PseudoLru<K, (), S>, // B1
+    lru: PseudoLru<K, V, S>,        // T1
+    lfu: PseudoLru<K, V, S>,        // T2
+    ghost_lfu: PseudoLru<K, (), S>, // B2
+    partition: usize,               // repartition of L1 and L2 capacities
 }
 
 // FIXME capacity badly set !
@@ -68,19 +76,24 @@ impl<K: Eq + Hash, V> Arc<K, V> {
             lru: PseudoLru::new(capacity),
             lfu: PseudoLru::new(capacity),
             ghost_lfu: PseudoLru::new(capacity),
+            partition: capacity / 2,
         }
     }
 
     pub fn insert(&mut self, k: K, v: V) -> Option<V> {
 
-        // TODO increase or decrease the lru and lfu max_sizes
-        //      in relation to the target_sizes by `1`
-
+        // TODO why not removing it from the rlu
+        //      and moving it to the ghost_lru ?
+        //      it will be in the lfu anyway
         if self.lru.map.contains_key(&k) {
-            if let Some(k) = self.ghost_lru.map.remove(&k) {
-                // TODO increase lru target_size and
-                //      decrease lfu target_size by `1`
+
+            if self.ghost_lru.map.remove(&k).is_some() {
+                // increase the LRU (T1) capacity
+                let total = self.lru.capacity + self.lfu.capacity;
+                self.partition = (self.partition + 1).min(total);
             }
+
+            // self.lfu.set_capacity(xxx) and catch evicted
 
             match self.lfu.insert(k, v) {
                 Insertion::Replace(v) => Some(v),
@@ -92,10 +105,13 @@ impl<K: Eq + Hash, V> Arc<K, V> {
             }
         }
         else {
-            if let Some(k) = self.ghost_lfu.map.remove(&k) {
-                // TODO increase lfu target_size and
-                //      decrease lru target_size by `1`
+
+            if self.ghost_lfu.map.remove(&k).is_some() {
+                // increase the LFU (T2) capacity
+                self.partition.saturating_sub(1);
             }
+
+            // self.lru.set_capacity(xxx) and catch evicted
 
             match self.lru.insert(k, v) {
                 Insertion::Replace(v) => Some(v),
