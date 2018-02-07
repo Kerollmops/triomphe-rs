@@ -12,7 +12,7 @@ enum Insert<K, V> {
 }
 
 impl<K, V> Insert<K, V> {
-    fn replace(self) -> Option<V> {
+    fn replacement(self) -> Option<V> {
         match self {
             Insert::Replacement(v) => Some(v),
             _ => None,
