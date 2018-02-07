@@ -34,7 +34,7 @@ impl<K, V> PseudoLru<K, V> {
 impl<K: Eq + Hash, V> PseudoLru<K, V> {
     fn new(capacity: usize) -> Self {
         PseudoLru {
-            map: LinkedHashMap::new(),
+            map: LinkedHashMap::with_capacity(capacity),
             capacity: capacity,
         }
     }
