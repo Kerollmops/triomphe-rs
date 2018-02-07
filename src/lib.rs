@@ -86,7 +86,7 @@ pub struct Arc<K, V, S: BuildHasher = RandomState> {
     lru: PseudoLru<K, V, S>,        // T1
     lfu: PseudoLru<K, V, S>,        // T2
     ghost_lfu: PseudoLru<K, (), S>, // B2
-    partition: usize,               // repartition of T1 and T2 capacities
+    partition: usize,               // distribution of T1 and T2 target capacities
 }
 
 impl<K: Eq + Hash, V> Arc<K, V> {
