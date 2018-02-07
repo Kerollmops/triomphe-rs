@@ -20,10 +20,15 @@ impl<K, V> Insert<K, V> {
     }
 }
 
-#[derive(Clone)]
-struct PseudoLru<K: Eq + Hash, V, S: BuildHasher = RandomState> {
+struct PseudoLru<K, V, S: BuildHasher = RandomState> {
     map: LinkedHashMap<K, V, S>,
     capacity: usize,
+}
+
+impl<K, V> PseudoLru<K, V> {
+    fn increase_capacity(&mut self) {
+        self.capacity += 1;
+    }
 }
 
 impl<K: Eq + Hash, V> PseudoLru<K, V> {
@@ -47,10 +52,6 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
         }
     }
 
-    fn increase_capacity(&mut self) {
-        self.capacity += 1;
-    }
-
     fn decrease_capacity(&mut self) -> Option<(K, V)> {
         self.capacity = self.capacity.saturating_sub(1);
         if self.map.len() > self.capacity {
@@ -61,10 +62,17 @@ impl<K: Eq + Hash, V> PseudoLru<K, V> {
     }
 }
 
+impl<K: Hash + Eq + Clone, V: Clone, S: BuildHasher + Clone> Clone for PseudoLru<K, V, S> {
+    fn clone(&self) -> Self {
+        Self {
+            map: self.map.clone(),
+            capacity: self.capacity.clone()
+        }
+    }
+}
+
 // TODO remove this, its a little ugly
-fn set_capacity<K, V>(lru: &mut PseudoLru<K, V>, target: usize) -> Option<(K, V)>
-    where K: Eq + Hash
-{
+fn set_capacity<K: Eq + Hash, V>(lru: &mut PseudoLru<K, V>, target: usize) -> Option<(K, V)> {
     if lru.capacity > target {
         lru.decrease_capacity()
     } else {
@@ -73,8 +81,7 @@ fn set_capacity<K, V>(lru: &mut PseudoLru<K, V>, target: usize) -> Option<(K, V)
     }
 }
 
-#[derive(Clone)]
-pub struct Arc<K: Eq + Hash, V, S: BuildHasher = RandomState> {
+pub struct Arc<K, V, S: BuildHasher = RandomState> {
     ghost_lru: PseudoLru<K, (), S>, // B1
     lru: PseudoLru<K, V, S>,        // T1
     lfu: PseudoLru<K, V, S>,        // T2
@@ -148,6 +155,18 @@ impl<K: Eq + Hash, V> Arc<K, V> {
 
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V> {
         unimplemented!()
+    }
+}
+
+impl<K: Hash + Eq + Clone, V: Clone, S: BuildHasher + Clone> Clone for Arc<K, V, S> {
+    fn clone(&self) -> Self {
+        Self {
+            ghost_lru: self.ghost_lru.clone(),
+            lru: self.lru.clone(),
+            lfu: self.lfu.clone(),
+            ghost_lfu: self.ghost_lfu.clone(),
+            partition: self.partition.clone(),
+        }
     }
 }
 
